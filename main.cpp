@@ -23,6 +23,7 @@ class BaseObject {
     protected:
     std::string name;
     FileSystemObjectType type;
+    std::streampos start;
     void printNestness(std::ostream& out = std::cout, int nestedDegree = 0) {
         for (int i = 0; i < nestedDegree-1; i++) {
             out << "    ";
@@ -42,11 +43,11 @@ class BaseObject {
     std::string getName() {
         return name;
     }
-    BaseObject(FileSystemObjectType t, std::string name) {
-        this->name = name;
-        this->type = t;
+    std::streampos getStart() {
+        return start;
     }
-    BaseObject(FileSystemObjectType t, std::string name, BaseObject* parent) {
+    BaseObject(std::streampos start, FileSystemObjectType t, std::string name) {
+        this->start = start;
         this->name = name;
         this->type = t;
     }
@@ -74,10 +75,7 @@ class File : public BaseObject {
     std::string getContent() {
         return content;
     }
-    File(std::string name, std::string content) : BaseObject(FILETYPE, name) {
-        this->content = content;
-    }
-    File(std::string name, BaseObject* parent, std::string content) : BaseObject(FILETYPE, name, parent) {
+    File(std::streampos start, std::string name, std::string content) : BaseObject(start, FILETYPE, name) {
         this->content = content;
     }
     void serialize(std::fstream& fileStream) {
@@ -95,10 +93,12 @@ class File : public BaseObject {
             std::ios_base::failure("File not found");
         }
 
+        std::streampos start = fileStream.tellg();
+
         std::string name = readString(fileStream);
         std::string content = readString(fileStream);
 
-        return new File(name, content);
+        return new File(start, name, content);
     }
     void print(std::ostream& out = std::cout, int nestedDegree = 0) override {
         printNestness(out, nestedDegree);
@@ -110,8 +110,13 @@ class Directory : public BaseObject {
     private:
     std::unordered_map<std::string, BaseObject*> children;
     public:
-    Directory(std::string name) : BaseObject(DIRTYPE, name) {}
-    Directory(std::string name, BaseObject* parent) : BaseObject(DIRTYPE, name, parent) {}
+    Directory* getDirectory(std::string name) {
+        if (children.find(name) == children.end()) {
+            throw std::invalid_argument("Directory not found");
+        }
+        return dynamic_cast<Directory*>(children[name]);
+    }
+    Directory(std::streampos start, std::string name) : BaseObject(start, DIRTYPE, name) {}
     void addChild(BaseObject* child) {
         if (children.find(child->getName()) != children.end()) {
             throw std::invalid_argument("Child already exists");
@@ -147,8 +152,10 @@ class Directory : public BaseObject {
             std::ios_base::failure("File not found");
         }
 
+        std::streampos start = fileStream.tellg();
+
         std::string name = readString(fileStream);
-        Directory* dir = new Directory(name);
+        Directory* dir = new Directory(start, name);
 
         std::size_t childrenCount;
         fileStream.read(reinterpret_cast<char*>(&childrenCount), sizeof(std::size_t));
@@ -173,8 +180,10 @@ class Directory : public BaseObject {
             std::ios_base::failure("File not found");
         }
 
+        std::streampos start = fileStream.tellg();
+
         std::string name = readString(fileStream);
-        Directory* dir = new Directory(name);
+        Directory* dir = new Directory(start, name);
 
         std::size_t childrenCount;
         fileStream.read(reinterpret_cast<char*>(&childrenCount), sizeof(std::size_t));
@@ -205,10 +214,12 @@ class Directory : public BaseObject {
 
 class FileSystemManager {
     private:
-    Directory* current;
+    std::stack<Directory*> history;
+    std::string filename;
     public:
     FileSystemManager(std::string path) {
         std::fstream fileStream(path);
+        filename = path;
 
         if(!fileStream.is_open()) {
            std::invalid_argument("File not found");
@@ -221,18 +232,38 @@ class FileSystemManager {
             std::invalid_argument("Root cannot be a file");
         }
 
-        current = Directory::deserializeShallow(fileStream);
+        Directory* current = Directory::deserializeShallow(fileStream);
+
+        history.push(current);
 
         fileStream.close();
     }
-    ~FileSystemManager() {
-        delete current;
+    void goIn(std::string name) {
+        Directory* current = history.top()->getDirectory(name);
+        history.push(current);
+        
+        std::fstream fileStream(filename, std::ios::in | std::ios::binary);
+        fileStream.seekg(current->getStart());
+
+        history.top() = Directory::deserializeShallow(fileStream);
+
+        fileStream.close();
+    }
+    void goBack() {
+        if (history.size() > 1) {
+            history.pop();
+        }
+    }
+    void createDirectory(std::string name) {
+        Directory* current = history.top();
+        Directory* newDir = new Directory(0, name);
+        current->addChild(newDir);
     }
     void serialize(std::fstream& fileStream) {
-        current->serialize(fileStream);
+        history.top()->serialize(fileStream);
     }
     void printCurrentDirectory() {
-        current->print();
+        history.top()->print();
     }
    
 };
@@ -264,6 +295,14 @@ int main() {
         std::cin >> command;
         if (command == "ls") {
             manager.printCurrentDirectory();
+        } else if (command == "cd") {
+            std::string name;
+            std::cin >> name;
+            if (name == "..") {
+                manager.goBack();
+            } else {
+                manager.goIn(name);
+            }
         }
     } while (command != "exit");
     return 0;
