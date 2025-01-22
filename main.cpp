@@ -1,7 +1,7 @@
 #include<iostream>
 #include<fstream>
 #include<string>
-#include<vector>
+#include<unordered_map>
 #include<exception>
 #include<stack>
 
@@ -108,12 +108,15 @@ class File : public BaseObject {
 
 class Directory : public BaseObject {
     private:
-    std::vector<BaseObject*> children;
+    std::unordered_map<std::string, BaseObject*> children;
     public:
     Directory(std::string name) : BaseObject(DIRTYPE, name) {}
     Directory(std::string name, BaseObject* parent) : BaseObject(DIRTYPE, name, parent) {}
     void addChild(BaseObject* child) {
-        children.push_back(child);
+        if (children.find(child->getName()) != children.end()) {
+            throw std::invalid_argument("Child already exists");
+        }
+        children[child->getName()] = child;
     }
     void serialize(std::fstream& fileStream) {
 
@@ -129,11 +132,11 @@ class Directory : public BaseObject {
         fileStream.write(reinterpret_cast<char const *>(&childrenCount), sizeof(std::size_t));
 
         for(auto child : children) {
-            if (child->getType() == DIRTYPE) {
-                Directory* dir = dynamic_cast<Directory*>(child);
+            if (child.second->getType() == DIRTYPE) {
+                Directory* dir = dynamic_cast<Directory*>(child.second);
                 dir->serialize(fileStream);
             } else {
-                File* file = dynamic_cast<File*>(child);
+                File* file = dynamic_cast<File*>(child.second);
                 file->serialize(fileStream);
             }
         }
@@ -190,21 +193,19 @@ class Directory : public BaseObject {
         }
 
         return dir;
-
-
     }
     void print(std::ostream& out = std::cout, int nestedDegree = 0) override {
         printNestness(out, nestedDegree);
         out << "(Directory)" << name << ":" << std::endl;
         for(auto child : children) {
-            child->print(out, nestedDegree+1);
+            child.second->print(out, nestedDegree+1);
         }
     }
 };
 
 class FileSystemManager {
     private:
-    Directory* root;
+    Directory* current;
     public:
     FileSystemManager(std::string path) {
         std::fstream fileStream(path);
@@ -220,18 +221,18 @@ class FileSystemManager {
             std::invalid_argument("Root cannot be a file");
         }
 
-        root = Directory::deserializeShallow(fileStream);
+        current = Directory::deserializeShallow(fileStream);
 
         fileStream.close();
     }
     ~FileSystemManager() {
-        delete root;
+        delete current;
     }
     void serialize(std::fstream& fileStream) {
-        root->serialize(fileStream);
+        current->serialize(fileStream);
     }
     void printCurrentDirectory() {
-        root->print();
+        current->print();
     }
    
 };
