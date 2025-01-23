@@ -4,6 +4,7 @@
 #include<unordered_map>
 #include<exception>
 #include<stack>
+#include<vector>
 
 enum FileSystemObjectType {
     DIRTYPE = 0,
@@ -258,6 +259,33 @@ class FileSystemManager {
         Directory* current = history.top();
         Directory* newDir = new Directory(0, name);
         current->addChild(newDir);
+
+        std::fstream fileStream(filename, std::ios::in | std::ios::binary);
+
+        fileStream.seekg(0, std::ios::end);
+        std::streampos fileSize = fileStream.tellg();
+
+        fileStream.seekg(current->getStart());
+        Directory* toMovePointer = Directory::deserializeShallow(fileStream);
+        delete toMovePointer;
+
+        std::streampos afterCurrent = fileStream.tellg();
+        std::streamsize dataSize = fileSize - afterCurrent;
+
+        std::vector<char> buffer(dataSize);
+        fileStream.read(buffer.data(), dataSize);
+
+        fileStream.close();
+
+        fileStream.open(filename, std::ios::out | std::ios::binary);
+        std::streampos start = current->getStart();
+        start -= sizeof(FileSystemObjectType);
+        fileStream.seekp(start);
+
+        current->serialize(fileStream);
+        fileStream.write(buffer.data(), dataSize);
+
+        fileStream.close();
     }
     void serialize(std::fstream& fileStream) {
         history.top()->serialize(fileStream);
@@ -303,6 +331,12 @@ int main() {
             } else {
                 manager.goIn(name);
             }
+        } else if (command == "mkdir") {
+            std::string name;
+            std::cin >> name;
+            manager.createDirectory(name);
+        } else {
+            std::cout << command << " is not a recognized command" << std::endl;
         }
     } while (command != "exit");
     return 0;
