@@ -157,6 +157,16 @@ class Directory : public BaseObject {
             }
         }
     }
+    static Directory* deserializeFullFrom(std::fstream& fileStream, std::streampos start) {
+
+        if (!fileStream.is_open()) {
+            std::ios_base::failure("File not found");
+        }
+
+        fileStream.seekg(start);
+
+        return deserializeFull(fileStream);
+    }
     static Directory* deserializeFull(std::fstream& fileStream) {
 
         if (!fileStream.is_open()) {
@@ -271,52 +281,43 @@ class FileSystemManager {
             history.pop();
         }
     }
-    void overwriteFile(BaseObject* current) {
-        std::fstream fileStream(filename, std::ios::in | std::ios::binary);
-
+    void overwriteFile(Directory* current) {
+        std::fstream fileStream(filename, std::ios::in | std::ios::out | std::ios::binary);
+        
         fileStream.seekg(0, std::ios::end);
         std::streampos fileSize = fileStream.tellg();
-
+        
         fileStream.seekg(current->getStart());
-        if (current->getType() == DIRTYPE) {
-            Directory* toMovePointer = Directory::deserializeShallow(fileStream);
-            delete toMovePointer;
-        } else {
-            File* toMovePointer = File::deserialize(fileStream);
-            delete toMovePointer;
-        }
-
+        Directory* toMovePointer = Directory::deserializeFull(fileStream);
+        delete toMovePointer;
+        
         std::streampos afterCurrent = fileStream.tellg();
         std::streamsize dataSize = fileSize - afterCurrent;
-
+        
         std::vector<char> buffer(dataSize);
         fileStream.read(buffer.data(), dataSize);
-
-        fileStream.close();
-
-        fileStream.open(filename, std::ios::out | std::ios::binary);
+        
         std::streampos start = current->getStart();
         start -= sizeof(FileSystemObjectType);
         fileStream.seekp(start);
-
-        if (current->getType() == DIRTYPE) {
-            Directory* dir = dynamic_cast<Directory*>(current);
-            dir->serialize(fileStream);
-        } else {
-            File* file = dynamic_cast<File*>(current);
-            file->serialize(fileStream);
-        }
-
+        
+        current->serialize(fileStream);
         fileStream.write(buffer.data(), dataSize);
-
+        
         fileStream.close();
     }
     void createDirectory(std::string name) {
         Directory* current = history.top();
+
+        std::fstream fileStream(filename, std::ios::in | std::ios::binary);
+        Directory* currentFull = Directory::deserializeFullFrom(fileStream, current->getStart());
+        fileStream.close();
+
         Directory* newDir = new Directory(0, name);
+        currentFull->addChild(newDir);
         current->addChild(newDir);
 
-        overwriteFile(current);
+        overwriteFile(currentFull);
     }
     void deleteDirectory(std::string name) {
         BaseObject* toDelete = history.top()->getChild(name);
@@ -374,17 +375,22 @@ class FileSystemManager {
 };
 
 int main() {
-    // File essay(0, "essay.txt", "This is an essay");
-    // Directory root(0, "root");
-    // Directory photos(0, "photos");
-    // root.addChild(&essay);
-    // root.addChild(&photos);
-    // File photo1(0, "photo1.jpg", "This is a photo");
-    // photos.addChild(&photo1);
-    // root.print();
-    // std::fstream fileStream("fileSystem.bat", std::ios::out | std::ios::binary);
-    // root.serialize(fileStream);
-    // fileStream.close();
+    bool restart;
+    std::cout << "Do you want to restart the file system? (1/0)" << std::endl;
+    std::cin >> restart;
+    if (restart) {
+        File essay(0, "essay.txt", "This is an essay");
+        Directory root(0, "root");
+        Directory photos(0, "photos");
+        root.addChild(&essay);
+        root.addChild(&photos);
+        File photo1(0, "photo1.jpg", "This is a photo");
+        photos.addChild(&photo1);
+        root.print();
+        std::fstream fileStream("fileSystem.bat", std::ios::out | std::ios::binary);
+        root.serialize(fileStream);
+        fileStream.close();
+    }
 
     // std::fstream fileStream("fileSystem.bat", std::ios::in | std::ios::binary);
     // FileSystemObjectType type;
