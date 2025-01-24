@@ -103,7 +103,7 @@ class File : public BaseObject {
     }
     void print(std::ostream& out = std::cout, int nestedDegree = 0) override {
         printNestness(out, nestedDegree);
-        out << "(File)" << name <<  ": " << content << std::endl;
+        out << "(File)" << name << std::endl;
     }
 };
 
@@ -111,11 +111,11 @@ class Directory : public BaseObject {
     private:
     std::unordered_map<std::string, BaseObject*> children;
     public:
-    Directory* getDirectory(std::string name) {
+    BaseObject* getChild(std::string name) {
         if (children.find(name) == children.end()) {
             throw std::invalid_argument("Directory not found");
         }
-        return dynamic_cast<Directory*>(children[name]);
+        return children[name];
     }
     Directory(std::streampos start, std::string name) : BaseObject(start, DIRTYPE, name) {}
     void addChild(BaseObject* child) {
@@ -123,6 +123,16 @@ class Directory : public BaseObject {
             throw std::invalid_argument("Child already exists");
         }
         children[child->getName()] = child;
+    }
+    void deleteChild(std::string name) {
+        if (children.find(name) == children.end()) {
+            throw std::invalid_argument("Child not found");
+        }
+
+        children.erase(name);
+    }
+    int getChildrenCount() {
+        return children.size();
     }
     void serialize(std::fstream& fileStream) {
 
@@ -206,7 +216,7 @@ class Directory : public BaseObject {
     }
     void print(std::ostream& out = std::cout, int nestedDegree = 0) override {
         printNestness(out, nestedDegree);
-        out << "(Directory)" << name << ":" << std::endl;
+        out << "(Directory)" << name << std::endl;
         for(auto child : children) {
             child.second->print(out, nestedDegree+1);
         }
@@ -240,11 +250,17 @@ class FileSystemManager {
         fileStream.close();
     }
     void goIn(std::string name) {
-        Directory* current = history.top()->getDirectory(name);
-        history.push(current);
+        Directory* current = history.top();
+        BaseObject* child = current->getChild(name);
+
+        if (child->getType() != DIRTYPE) {
+            throw std::invalid_argument("Cannot go into a file");
+        }
+
+        history.push(dynamic_cast<Directory*>(child));
         
         std::fstream fileStream(filename, std::ios::in | std::ios::binary);
-        fileStream.seekg(current->getStart());
+        fileStream.seekg(child->getStart());
 
         history.top() = Directory::deserializeShallow(fileStream);
 
@@ -255,19 +271,20 @@ class FileSystemManager {
             history.pop();
         }
     }
-    void createDirectory(std::string name) {
-        Directory* current = history.top();
-        Directory* newDir = new Directory(0, name);
-        current->addChild(newDir);
-
+    void overwriteFile(BaseObject* current) {
         std::fstream fileStream(filename, std::ios::in | std::ios::binary);
 
         fileStream.seekg(0, std::ios::end);
         std::streampos fileSize = fileStream.tellg();
 
         fileStream.seekg(current->getStart());
-        Directory* toMovePointer = Directory::deserializeShallow(fileStream);
-        delete toMovePointer;
+        if (current->getType() == DIRTYPE) {
+            Directory* toMovePointer = Directory::deserializeShallow(fileStream);
+            delete toMovePointer;
+        } else {
+            File* toMovePointer = File::deserialize(fileStream);
+            delete toMovePointer;
+        }
 
         std::streampos afterCurrent = fileStream.tellg();
         std::streamsize dataSize = fileSize - afterCurrent;
@@ -282,10 +299,70 @@ class FileSystemManager {
         start -= sizeof(FileSystemObjectType);
         fileStream.seekp(start);
 
-        current->serialize(fileStream);
+        if (current->getType() == DIRTYPE) {
+            Directory* dir = dynamic_cast<Directory*>(current);
+            dir->serialize(fileStream);
+        } else {
+            File* file = dynamic_cast<File*>(current);
+            file->serialize(fileStream);
+        }
+
         fileStream.write(buffer.data(), dataSize);
 
         fileStream.close();
+    }
+    void createDirectory(std::string name) {
+        Directory* current = history.top();
+        Directory* newDir = new Directory(0, name);
+        current->addChild(newDir);
+
+        overwriteFile(current);
+    }
+    void deleteDirectory(std::string name) {
+        BaseObject* toDelete = history.top()->getChild(name);
+
+        if (toDelete->getType() != DIRTYPE) {
+            throw std::invalid_argument("Cannot delete a file");
+        }
+
+        std::fstream fileStream(filename, std::ios::in | std::ios::binary);
+        fileStream.seekg(toDelete->getStart());
+        Directory* toDeleteShallow = Directory::deserializeShallow(fileStream);
+        fileStream.close();
+
+        if (toDeleteShallow->getChildrenCount() > 0) {
+            throw std::invalid_argument("Directory is not empty");
+        }
+
+        history.top()->deleteChild(name);
+        overwriteFile(history.top());
+    }
+    void deleteFile(std::string name) {
+        BaseObject* toDelete = history.top()->getChild(name);
+
+        if (toDelete->getType() != FILETYPE) {
+            throw std::invalid_argument("Cannot delete a file");
+        }
+
+        history.top()->deleteChild(name);
+        overwriteFile(history.top());
+    }
+    void copyFile(std::string name, Directory* destination) {
+        BaseObject* toCopy = history.top()->getChild(name);
+
+        if (toCopy->getType() != FILETYPE) {
+            throw std::invalid_argument("Cannot copy a directory");
+        }
+
+
+    }
+    void printFileContent(std::string name, std::ostream& out = std::cout) {
+        BaseObject* file = history.top()->getChild(name);
+        if (file->getType() == DIRTYPE) {
+            throw std::invalid_argument("Cannot print content of a directory");
+        }
+        File* file2 = dynamic_cast<File*>(file);
+        out << file2->getContent() << std::endl;
     }
     void serialize(std::fstream& fileStream) {
         history.top()->serialize(fileStream);
@@ -297,12 +374,12 @@ class FileSystemManager {
 };
 
 int main() {
-    // File essay("essay.txt", "This is an essay");
-    // Directory root("root");
-    // Directory photos("photos");
+    // File essay(0, "essay.txt", "This is an essay");
+    // Directory root(0, "root");
+    // Directory photos(0, "photos");
     // root.addChild(&essay);
     // root.addChild(&photos);
-    // File photo1("photo1.jpg", "This is a photo");
+    // File photo1(0, "photo1.jpg", "This is a photo");
     // photos.addChild(&photo1);
     // root.print();
     // std::fstream fileStream("fileSystem.bat", std::ios::out | std::ios::binary);
@@ -321,23 +398,45 @@ int main() {
     std::string command;
     do {
         std::cin >> command;
-        if (command == "ls") {
-            manager.printCurrentDirectory();
-        } else if (command == "cd") {
-            std::string name;
-            std::cin >> name;
-            if (name == "..") {
-                manager.goBack();
+        try {
+            if (command == "ls") {
+                manager.printCurrentDirectory();
+            } else if (command == "cd") {
+                std::string name;
+                std::cin >> name;
+                if (name == "..") {
+                    manager.goBack();
+                } else {
+                    manager.goIn(name);
+                }
+            } else if (command == "mkdir") {
+                std::string name;
+                std::cin >> name;
+                manager.createDirectory(name);
+
+            } else if (command == "rmdir") {
+                std::string name;
+                std::cin >> name;
+                manager.deleteDirectory(name);
+
+            } else if(command == "rm") {
+                std::string name;
+                std::cin >> name;
+                manager.deleteFile(name);
+
+            } else if (command == "cat") {
+                std::string name;
+                std::cin >> name;
+                manager.printFileContent(name);
+
+            } else if (command == "exit") {
+                break;
             } else {
-                manager.goIn(name);
+                std::cout << command << " is not a recognized command" << std::endl;
             }
-        } else if (command == "mkdir") {
-            std::string name;
-            std::cin >> name;
-            manager.createDirectory(name);
-        } else {
-            std::cout << command << " is not a recognized command" << std::endl;
-        }
-    } while (command != "exit");
+        } catch (std::invalid_argument& e) {
+                std::cout << e.what() << std::endl;
+            }
+    } while (true);
     return 0;
 }
