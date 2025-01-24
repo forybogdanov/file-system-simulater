@@ -20,6 +20,21 @@ std::string readString(std::fstream& fileStream) {
     return std::string(str);
 }
 
+std::vector<std::string> splitString(std::string str, char delimiter) {
+    std::vector<std::string> result;
+    std::string current = "";
+    for (char c : str) {
+        if (c == delimiter) {
+            result.push_back(current);
+            current = "";
+        } else {
+            current += c;
+        }
+    }
+    result.push_back(current);
+    return result;
+}
+
 class BaseObject {
     protected:
     std::string name;
@@ -281,6 +296,15 @@ class FileSystemManager {
             history.pop();
         }
     }
+    void manageMoveCommand(std::string command) {
+       if (command == ".") {
+            return;
+        } else if (command == "..") {
+            goBack();
+        } else {
+            goIn(command);
+        }
+    }
     void overwriteFile(Directory* current) {
         std::fstream fileStream(filename, std::ios::in | std::ios::out | std::ios::binary);
         
@@ -348,14 +372,28 @@ class FileSystemManager {
         history.top()->deleteChild(name);
         overwriteFile(history.top());
     }
-    void copyFile(std::string name, Directory* destination) {
-        BaseObject* toCopy = history.top()->getChild(name);
+    void copyFile(std::string filename, std::string destinationPath) {
+        BaseObject* toCopy = history.top()->getChild(filename);
 
         if (toCopy->getType() != FILETYPE) {
             throw std::invalid_argument("Cannot copy a directory");
         }
 
+        FileSystemManager managerCopy(*this);
+        std::vector<std::string> steps = splitString(destinationPath, '/');
 
+        for (std::string step : steps) {
+            managerCopy.manageMoveCommand(step);
+        }
+
+        std::fstream fileStream(managerCopy.filename, std::ios::in | std::ios::binary);
+        Directory* fullDir = Directory::deserializeFullFrom(fileStream, managerCopy.history.top()->getStart());
+        fileStream.close();
+
+        File* newFile = new File(*dynamic_cast<File*>(toCopy));
+        fullDir->addChild(newFile);
+
+        overwriteFile(fullDir);
     }
     void printFileContent(std::string name, std::ostream& out = std::cout) {
         BaseObject* file = history.top()->getChild(name);
@@ -410,11 +448,7 @@ int main() {
             } else if (command == "cd") {
                 std::string name;
                 std::cin >> name;
-                if (name == "..") {
-                    manager.goBack();
-                } else {
-                    manager.goIn(name);
-                }
+                manager.manageMoveCommand(name);
             } else if (command == "mkdir") {
                 std::string name;
                 std::cin >> name;
@@ -434,7 +468,12 @@ int main() {
                 std::string name;
                 std::cin >> name;
                 manager.printFileContent(name);
-
+            
+            } else if (command == "cp") {
+                std::string name, destination;
+                std::cin >> name >> destination;
+                manager.copyFile(name, destination);
+                
             } else if (command == "exit") {
                 break;
             } else {
