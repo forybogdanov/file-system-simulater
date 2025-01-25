@@ -478,6 +478,7 @@ class FileSystemManager {
         fullDir->addChild(newFile);
 
         overwriteFile(fullDir);
+        delete fullDir;
     }
     void writeToFile(std::string name, std::string content) {
         BaseObject* file = history.top()->getChild(name);
@@ -494,7 +495,6 @@ class FileSystemManager {
 
             overwriteFile(fullDir);
             delete fullDir;
-            return;
         }
 
         if (file->getType() == DIRTYPE) {
@@ -571,6 +571,7 @@ class FileSystemManager {
         fullDir->addChild(newFile);
 
         overwriteFile(fullDir);
+        delete fullDir;
     }
     void exportFile(std::string source, std::string destination) {
         BaseObject* possibleFile = history.top()->getChild(source);
