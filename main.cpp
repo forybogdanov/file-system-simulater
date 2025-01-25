@@ -17,7 +17,9 @@ std::string readString(std::fstream& fileStream) {
     char* str = new char[length+1];
     fileStream.read(str, length);
     str[length] = '\0';
-    return std::string(str);
+    std::string res = std::string(str);
+    delete[] str;
+    return res;
 }
 
 std::vector<std::string> splitString(std::string str, char delimiter) {
@@ -486,7 +488,7 @@ class FileSystemManager {
         overwriteFile(fullDir);
         delete fullDir;
     }
-    void importFile(std::string source, std::string destination) {
+    void importFile(std::string source, std::string destination, std::string append) {
         std::fstream fileStream(source, std::ios::in | std::ios::binary);
         std::string filename;
 
@@ -499,6 +501,9 @@ class FileSystemManager {
         } else {
             filename = source;
         }
+
+        if (append.size() < 3) append = "";
+        else append = append.substr(2).substr(0, append.length()-3);
         
         std::string content = "";
         std::string line;
@@ -507,6 +512,8 @@ class FileSystemManager {
         }
         fileStream.close();
 
+        content += append;
+
         FileSystemManager managerCopy(*this);
         std::vector<std::string> steps = splitString(destination, '/');
         for (std::string step : steps) {
@@ -514,12 +521,20 @@ class FileSystemManager {
         }
 
         File* newFile = new File(0, filename, content);
+
+        if (managerCopy.history.top()->getChild(filename) != nullptr) {
+            managerCopy.history.top()->deleteChild(filename);
+        }
+
         managerCopy.history.top()->addChild(newFile);
 
         std::fstream fileStream2(managerCopy.filename, std::ios::in | std::ios::binary);
         Directory* fullDir = Directory::deserializeFullFrom(fileStream2, managerCopy.history.top()->getStart());
         fileStream2.close();
 
+        if (fullDir->getChild(filename) != nullptr) {
+            fullDir->deleteChild(filename);
+        }
         fullDir->addChild(newFile);
 
         overwriteFile(fullDir);
@@ -638,7 +653,9 @@ int main() {
             } else if (command == "import") {
                 std::string source, destination;
                 std::cin >> source >> destination;
-                manager.importFile(source, destination);
+                std::string append;
+                std::getline(std::cin, append);
+                manager.importFile(source, destination, append);
 
             } else if (command == "export") {
                 std::string source, destination;
