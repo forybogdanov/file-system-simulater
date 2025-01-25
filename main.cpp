@@ -127,8 +127,9 @@ class Directory : public BaseObject {
     std::unordered_map<std::string, BaseObject*> children;
     public:
     BaseObject* getChild(std::string name) {
+
         if (children.find(name) == children.end()) {
-            throw std::invalid_argument("Directory not found");
+            return nullptr;
         }
         return children[name];
     }
@@ -181,6 +182,16 @@ class Directory : public BaseObject {
         fileStream.seekg(start);
 
         return deserializeFull(fileStream);
+    }
+    static Directory* deserializeShallowFrom(std::fstream& fileStream, std::streampos start) {
+
+        if (!fileStream.is_open()) {
+            std::ios_base::failure("File not found");
+        }
+
+        fileStream.seekg(start);
+
+        return Directory::deserializeShallow(fileStream);
     }
     static Directory* deserializeFull(std::fstream& fileStream) {
 
@@ -278,16 +289,19 @@ class FileSystemManager {
         Directory* current = history.top();
         BaseObject* child = current->getChild(name);
 
+        if (child == nullptr) {
+            throw std::invalid_argument("Child not found");
+        }
+
         if (child->getType() != DIRTYPE) {
             throw std::invalid_argument("Cannot go into a file");
         }
-
-        history.push(dynamic_cast<Directory*>(child));
         
         std::fstream fileStream(filename, std::ios::in | std::ios::binary);
         fileStream.seekg(child->getStart());
 
-        history.top() = Directory::deserializeShallow(fileStream);
+        Directory* newCurrent = Directory::deserializeShallow(fileStream);
+        history.push(newCurrent);
 
         fileStream.close();
     }
@@ -342,6 +356,14 @@ class FileSystemManager {
         current->addChild(newDir);
 
         overwriteFile(currentFull);
+        delete currentFull;
+
+        std::fstream fileStream2(filename, std::ios::in | std::ios::binary);
+        current = Directory::deserializeShallowFrom(fileStream2, current->getStart());
+        fileStream2.close();
+
+        history.pop();
+        history.push(current);
     }
     void deleteDirectory(std::string name) {
         BaseObject* toDelete = history.top()->getChild(name);
@@ -360,20 +382,44 @@ class FileSystemManager {
         }
 
         history.top()->deleteChild(name);
-        overwriteFile(history.top());
+
+        std::fstream fileStream2(filename, std::ios::in | std::ios::binary);
+        Directory* fullDir = Directory::deserializeFullFrom(fileStream2, history.top()->getStart());
+        fileStream2.close();
+
+        fullDir->deleteChild(name);
+
+        overwriteFile(fullDir);
+        delete fullDir;
     }
     void deleteFile(std::string name) {
         BaseObject* toDelete = history.top()->getChild(name);
+
+        if (toDelete == nullptr) {
+            throw std::invalid_argument("Child not found");
+        }
 
         if (toDelete->getType() != FILETYPE) {
             throw std::invalid_argument("Cannot delete a file");
         }
 
         history.top()->deleteChild(name);
-        overwriteFile(history.top());
+
+        std::fstream fileStream2(filename, std::ios::in | std::ios::binary);
+        Directory* fullDir = Directory::deserializeFullFrom(fileStream2, history.top()->getStart());
+        fileStream2.close();
+
+        fullDir->deleteChild(name);
+
+        overwriteFile(fullDir);
+        delete fullDir;
     }
     void copyFile(std::string filename, std::string destinationPath) {
         BaseObject* toCopy = history.top()->getChild(filename);
+
+        if (toCopy == nullptr) {
+            throw std::invalid_argument("Child not found");
+        }
 
         if (toCopy->getType() != FILETYPE) {
             throw std::invalid_argument("Cannot copy a directory");
@@ -395,8 +441,117 @@ class FileSystemManager {
 
         overwriteFile(fullDir);
     }
+    void writeToFile(std::string name, std::string content) {
+        BaseObject* file = history.top()->getChild(name);
+
+        if (file == nullptr) {
+            File* newFile = new File(0, name, content);
+            history.top()->addChild(newFile);
+            
+            std::fstream fileStream2(filename, std::ios::in | std::ios::binary);
+            Directory* fullDir = Directory::deserializeFullFrom(fileStream2, history.top()->getStart());
+            fileStream2.close();
+            
+            fullDir->addChild(newFile);
+
+            overwriteFile(fullDir);
+            delete fullDir;
+            return;
+        }
+
+        if (file->getType() == DIRTYPE) {
+            throw std::invalid_argument("Cannot write to a directory");
+        }
+
+        content = content.substr(2).substr(0, content.length()-3);
+
+        File* file2 = dynamic_cast<File*>(file);
+        std::string toWrite = "";
+
+        if (content.size() == 0) {
+            toWrite = "";
+        } else {
+            toWrite = file2->getContent() + content;
+        }
+
+        file2->setContent(toWrite);
+       
+        std::fstream fileStream2(filename, std::ios::in | std::ios::binary);
+        Directory* fullDir = Directory::deserializeFullFrom(fileStream2, history.top()->getStart());
+        fileStream2.close();
+
+        File* fileSaved = dynamic_cast<File*>(fullDir->getChild(name));
+        fileSaved->setContent(content);       
+
+        overwriteFile(fullDir);
+        delete fullDir;
+    }
+    void importFile(std::string source, std::string destination) {
+        std::fstream fileStream(source, std::ios::in | std::ios::binary);
+        std::string filename;
+
+        if (!fileStream.is_open()) {
+            throw std::invalid_argument("File not found");
+        }
+
+        if (source.find_last_of("/\\") != std::string::npos) {
+            filename = source.substr(source.find_last_of("/\\"));
+        } else {
+            filename = source;
+        }
+        
+        std::string content = "";
+        std::string line;
+        while (std::getline(fileStream, line)) {
+            content += line + "\n";
+        }
+        fileStream.close();
+
+        FileSystemManager managerCopy(*this);
+        std::vector<std::string> steps = splitString(destination, '/');
+        for (std::string step : steps) {
+            managerCopy.manageMoveCommand(step);
+        }
+
+        File* newFile = new File(0, filename, content);
+        managerCopy.history.top()->addChild(newFile);
+
+        std::fstream fileStream2(managerCopy.filename, std::ios::in | std::ios::binary);
+        Directory* fullDir = Directory::deserializeFullFrom(fileStream2, managerCopy.history.top()->getStart());
+        fileStream2.close();
+
+        fullDir->addChild(newFile);
+
+        overwriteFile(fullDir);
+    }
+    void exportFile(std::string source, std::string destination) {
+        BaseObject* possibleFile = history.top()->getChild(source);
+
+        if (possibleFile == nullptr) {
+            throw std::invalid_argument("File not found");
+        }
+
+        if (possibleFile->getType() == DIRTYPE) {
+            throw std::invalid_argument("Cannot export a directory");
+        }
+
+        File* file = dynamic_cast<File*>(possibleFile);
+        std::fstream fileStream(destination, std::ios::out);
+
+        if (!fileStream.is_open()) {
+            throw std::runtime_error("Cannot create file");
+        }
+
+        fileStream << file->getContent();
+        fileStream.close();
+    }
     void printFileContent(std::string name, std::ostream& out = std::cout) {
         BaseObject* file = history.top()->getChild(name);
+
+        if (file == nullptr) {
+            throw std::invalid_argument("File not found");
+        }
+
         if (file->getType() == DIRTYPE) {
             throw std::invalid_argument("Cannot print content of a directory");
         }
@@ -425,7 +580,7 @@ int main() {
         File photo1(0, "photo1.jpg", "This is a photo");
         photos.addChild(&photo1);
         root.print();
-        std::fstream fileStream("fileSystem.bat", std::ios::out | std::ios::binary);
+        std::fstream fileStream("fileSystem.bin", std::ios::out | std::ios::binary);
         root.serialize(fileStream);
         fileStream.close();
     }
@@ -438,7 +593,7 @@ int main() {
     // fileStream.close();
 
 
-    FileSystemManager manager("fileSystem.bat");
+    FileSystemManager manager("fileSystem.bin");
     std::string command;
     do {
         std::cin >> command;
@@ -473,7 +628,23 @@ int main() {
                 std::string name, destination;
                 std::cin >> name >> destination;
                 manager.copyFile(name, destination);
-                
+
+            } else if (command == "write") {
+                std::string name, content;
+                std::cin >> name;
+                std::getline(std::cin, content);
+                manager.writeToFile(name, content);
+
+            } else if (command == "import") {
+                std::string source, destination;
+                std::cin >> source >> destination;
+                manager.importFile(source, destination);
+
+            } else if (command == "export") {
+                std::string source, destination;
+                std::cin >> source >> destination;
+                manager.exportFile(source, destination);
+
             } else if (command == "exit") {
                 break;
             } else {
