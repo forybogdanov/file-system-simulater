@@ -18,22 +18,22 @@ int main() {
         fileStream.close();
     }
 
-    // std::fstream fileStream("fileSystem.bin", std::ios::in | std::ios::binary);
-
-    // Directory* dirTest = Directory::deserializeShallowFrom(fileStream, 71);
-    // fileStream.close();
-    // dirTest->print();
-
-
-    // std::fstream fileStream("fileSystem.bin", std::ios::in | std::ios::binary);
-    // std::string line;
-
-    // fileStream.seekg(72);
-
-    // while (fileStream >> line) {
-    //     std::cout << line << std::endl;
+    // for (int i = -10; i < 10; i++) {
+    //     std::cout << i << " ";
+    //     try {
+    //         std::fstream fileStream("fileSystem.bin", std::ios::in | std::ios::binary);
+    //         Directory* dir = Directory::deserializeShallowFrom(fileStream, 144+i);
+    //         dir->print();
+    //         fileStream.close();
+    //         delete dir;
+    //     } catch (std::exception& e) {
+    //         std::cout << e.what() << std::endl;
+    //     }
     // }
 
+    // std::fstream fileStream("fileSystem.bin", std::ios::in | std::ios::binary);
+    // Directory* root = Directory::deserializeFullFrom(fileStream, 0);
+    // root->print();
     // fileStream.close();
 
 

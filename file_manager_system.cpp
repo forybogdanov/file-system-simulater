@@ -15,7 +15,7 @@ FileSystemManager::FileSystemManager(std::string path) {
         std::invalid_argument("Root cannot be a file");
     }
 
-    Directory* current = Directory::deserializeShallow(fileStream);
+    Directory* current = Directory::deserializeFull(fileStream);
 
     history.push(current);
 
@@ -29,6 +29,8 @@ void FileSystemManager::goIn(std::string name) {
     if (child->getType() != DIRTYPE) {
         throw std::invalid_argument("Cannot go into a file");
     }
+
+    std::cout << "Start " << child->getStart() << std::endl;
     
     std::fstream fileStream(filename, std::ios::in | std::ios::binary);
     Directory* nextDir = Directory::deserializeShallowFrom(fileStream, child->getStart());

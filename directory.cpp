@@ -132,7 +132,6 @@ Directory* Directory::deserializeShallowFrom(std::fstream& fileStream, std::stre
         std::ios_base::failure("File not found");
     }
 
-    // start += 1;
     fileStream.seekg(start);
 
     return Directory::deserializeShallow(fileStream);
@@ -140,6 +139,7 @@ Directory* Directory::deserializeShallowFrom(std::fstream& fileStream, std::stre
 
 void Directory::print(std::ostream& out, int nestedDegree) {
     printNestness(out, nestedDegree);
+    out << "(Directory)" << name << std::endl;
     for(auto child : children) {
         child.second->print(out, nestedDegree+1);
     }
