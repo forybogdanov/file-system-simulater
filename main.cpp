@@ -340,28 +340,34 @@ class FileSystemManager {
             throw std::invalid_argument("Invalid path");
         }
     }
-    void overwriteFile(Directory* current) {
+    void overwriteFile(BaseObject* current) {
         std::fstream fileStream(filename, std::ios::in | std::ios::out | std::ios::binary);
         
         fileStream.seekg(0, std::ios::end);
         std::streampos fileSize = fileStream.tellg();
-        
+
         fileStream.seekg(current->getStart());
-        Directory* toMovePointer = Directory::deserializeFull(fileStream);
-        delete toMovePointer;
+
+        if (current->getType() == FILETYPE) {
+            File* toMovePointer = File::deserialize(fileStream);
+            delete toMovePointer;
+        } else {
+            Directory* toMovePointer = Directory::deserializeFull(fileStream);
+            delete toMovePointer;
+        }
         
         std::streampos afterCurrent = fileStream.tellg();
-        std::streamsize dataSize = fileSize - afterCurrent;
+        std::streamsize bufferSize = fileSize - afterCurrent;
         
-        std::vector<char> buffer(dataSize);
-        fileStream.read(buffer.data(), dataSize);
+        std::vector<char> buffer(bufferSize);
+        fileStream.read(buffer.data(), bufferSize);
         
         std::streampos start = current->getStart();
         start -= sizeof(FileSystemObjectType);
         fileStream.seekp(start);
         
         current->serialize(fileStream);
-        fileStream.write(buffer.data(), dataSize);
+        fileStream.write(buffer.data(), bufferSize);
         
         fileStream.close();
     }
@@ -495,13 +501,18 @@ class FileSystemManager {
 
             overwriteFile(fullDir);
             delete fullDir;
+            return;
         }
 
         if (file->getType() == DIRTYPE) {
             throw std::invalid_argument("Cannot write to a directory");
         }
 
-        content = content.substr(2).substr(0, content.length()-3);
+        if (content.size() < 3) {
+            content = "";
+        } else {
+            content = content.substr(2).substr(0, content.length()-3);
+        }
 
         File* file2 = dynamic_cast<File*>(file);
         std::string toWrite = "";
@@ -513,16 +524,7 @@ class FileSystemManager {
         }
 
         file2->setContent(toWrite);
-       
-        std::fstream fileStream2(filename, std::ios::in | std::ios::binary);
-        Directory* fullDir = Directory::deserializeFullFrom(fileStream2, history.top()->getStart());
-        fileStream2.close();
-
-        File* fileSaved = dynamic_cast<File*>(fullDir->getChild(name));
-        fileSaved->setContent(content);       
-
-        overwriteFile(fullDir);
-        delete fullDir;
+        overwriteFile(file2);
     }
     void importFile(std::string source, std::string destination, std::string append) {
         std::fstream fileStream(source, std::ios::in | std::ios::binary);
