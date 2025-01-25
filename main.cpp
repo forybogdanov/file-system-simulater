@@ -37,6 +37,15 @@ std::vector<std::string> splitString(std::string str, char delimiter) {
     return result;
 }
 
+bool includesSome(std::string str, std::vector<char> chars) {
+    for (char c : chars) {
+        if (str.find(c) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
 class BaseObject {
     protected:
     std::string name;
@@ -265,6 +274,15 @@ class FileSystemManager {
     private:
     std::stack<Directory*> history;
     std::string filename;
+    void manageMoveCommand(std::string command) {
+       if (command == ".") {
+            return;
+        } else if (command == "..") {
+            goBack();
+        } else {
+            goIn(command);
+        }
+    }
     public:
     FileSystemManager(std::string path) {
         std::fstream fileStream(path);
@@ -312,13 +330,14 @@ class FileSystemManager {
             history.pop();
         }
     }
-    void manageMoveCommand(std::string command) {
-       if (command == ".") {
-            return;
-        } else if (command == "..") {
-            goBack();
-        } else {
-            goIn(command);
+    void manageMoveCommandMultiple(std::string command) {
+        try {
+            std::vector<std::string> steps = splitString(command, '/');
+            for (std::string step : steps) {
+                manageMoveCommand(step);
+            }
+        } catch(...) {
+            throw std::invalid_argument("Invalid path");
         }
     }
     void overwriteFile(Directory* current) {
@@ -349,6 +368,18 @@ class FileSystemManager {
     void createDirectory(std::string name) {
         Directory* current = history.top();
 
+        if (name.empty()) {
+            throw std::invalid_argument("Name cannot be empty");
+        }
+
+        if (includesSome(name, {'/', '\\'})) {
+            throw std::invalid_argument("Name cannot contain '/' or '\\'");
+        }
+
+        if (current->getChild(name) != nullptr) {
+            throw std::invalid_argument("Child already exists");
+        }
+
         std::fstream fileStream(filename, std::ios::in | std::ios::binary);
         Directory* currentFull = Directory::deserializeFullFrom(fileStream, current->getStart());
         fileStream.close();
@@ -369,6 +400,10 @@ class FileSystemManager {
     }
     void deleteDirectory(std::string name) {
         BaseObject* toDelete = history.top()->getChild(name);
+
+        if (toDelete == nullptr) {
+            throw std::invalid_argument("Child not found");
+        }
 
         if (toDelete->getType() != DIRTYPE) {
             throw std::invalid_argument("Cannot delete a file");
@@ -398,7 +433,7 @@ class FileSystemManager {
         BaseObject* toDelete = history.top()->getChild(name);
 
         if (toDelete == nullptr) {
-            throw std::invalid_argument("Child not found");
+            throw std::invalid_argument("File not found");
         }
 
         if (toDelete->getType() != FILETYPE) {
@@ -428,15 +463,16 @@ class FileSystemManager {
         }
 
         FileSystemManager managerCopy(*this);
-        std::vector<std::string> steps = splitString(destinationPath, '/');
-
-        for (std::string step : steps) {
-            managerCopy.manageMoveCommand(step);
-        }
+        
+        managerCopy.manageMoveCommandMultiple(destinationPath);
 
         std::fstream fileStream(managerCopy.filename, std::ios::in | std::ios::binary);
         Directory* fullDir = Directory::deserializeFullFrom(fileStream, managerCopy.history.top()->getStart());
         fileStream.close();
+
+        if (fullDir->getChild(toCopy->getName()) != nullptr) {
+            fullDir->deleteChild(toCopy->getName());
+        }
 
         File* newFile = new File(*dynamic_cast<File*>(toCopy));
         fullDir->addChild(newFile);
@@ -515,10 +551,7 @@ class FileSystemManager {
         content += append;
 
         FileSystemManager managerCopy(*this);
-        std::vector<std::string> steps = splitString(destination, '/');
-        for (std::string step : steps) {
-            managerCopy.manageMoveCommand(step);
-        }
+        managerCopy.manageMoveCommandMultiple(destination);
 
         File* newFile = new File(0, filename, content);
 
@@ -578,8 +611,7 @@ class FileSystemManager {
     }
     void printCurrentDirectory() {
         history.top()->print();
-    }
-   
+    } 
 };
 
 int main() {
@@ -600,14 +632,6 @@ int main() {
         fileStream.close();
     }
 
-    // std::fstream fileStream("fileSystem.bat", std::ios::in | std::ios::binary);
-    // FileSystemObjectType type;
-    // fileStream.read(reinterpret_cast<char*>(&type), sizeof(FileSystemObjectType));
-    // Directory* root = Directory::deserializeShallow(fileStream);
-    // root->print();
-    // fileStream.close();
-
-
     FileSystemManager manager("fileSystem.bin");
     std::string command;
     do {
@@ -615,10 +639,12 @@ int main() {
         try {
             if (command == "ls") {
                 manager.printCurrentDirectory();
+
             } else if (command == "cd") {
                 std::string name;
                 std::cin >> name;
-                manager.manageMoveCommand(name);
+                manager.manageMoveCommandMultiple(name);
+
             } else if (command == "mkdir") {
                 std::string name;
                 std::cin >> name;
@@ -667,9 +693,9 @@ int main() {
             } else {
                 std::cout << command << " is not a recognized command" << std::endl;
             }
-        } catch (std::invalid_argument& e) {
-                std::cout << e.what() << std::endl;
-            }
+        } catch (std::exception& e) {
+            std::cout << e.what() << std::endl;
+        }
     } while (true);
     return 0;
 }
