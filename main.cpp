@@ -344,8 +344,25 @@ class FileSystemManager {
         if (history.size() > 1) {
             history.pop();
         }
+
+        std::fstream fileStream(filename, std::ios::in | std::ios::binary);
+        Directory* newCurrent = Directory::deserializeShallowFrom(fileStream, history.top()->getStart());
+        history.pop();
+        history.push(newCurrent);
     }
     void manageMoveCommandMultiple(std::string command) {
+
+        if (command[0] == '/') {
+            history = std::stack<Directory*>();
+            std::fstream fileStream(filename, std::ios::in | std::ios::binary);
+            FileSystemObjectType type;
+            fileStream.read(reinterpret_cast<char*>(&type), sizeof(FileSystemObjectType));
+            Directory* current = Directory::deserializeShallow(fileStream);
+            fileStream.close();
+            history.push(current);
+            command = command.substr(6); // remove the first / and the root and the after that /
+        }
+
         try {
             std::vector<std::string> steps = splitString(command, '/');
             for (std::string step : steps) {
