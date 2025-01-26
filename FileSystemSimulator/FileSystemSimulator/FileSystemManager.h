@@ -9,7 +9,7 @@ private:
     std::string filename;
 
     void manageMoveCommand(std::string command);
-
+    void refreshCurrentDirectory();
 public:
     FileSystemManager(std::string path);
     void goIn(std::string name);

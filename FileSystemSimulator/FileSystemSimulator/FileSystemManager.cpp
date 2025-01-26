@@ -1,6 +1,14 @@
 #include "FileSystemManager.h"
 #include "Utils.h"
 
+void FileSystemManager::refreshCurrentDirectory() {
+    std::fstream fileStream(filename, std::ios::in | std::ios::binary);
+    Directory* newCurrent = Directory::deserializeShallowFrom(fileStream, history.top()->getStart());
+    history.pop();
+    history.push(newCurrent);
+    fileStream.close();
+}
+
 void FileSystemManager::manageMoveCommand(std::string command) {
     if (command == ".") {
         return;
@@ -222,8 +230,15 @@ void FileSystemManager::deleteFile(std::string name) {
     delete fullDir;
 }
 
-void FileSystemManager::copyFile(std::string filename, std::string destinationPath) {
-    BaseObject* toCopy = history.top()->getChild(filename);
+void FileSystemManager::copyFile(std::string path, std::string destinationPath) {
+    std::string filename = path.substr(path.find_last_of("/\\") + 1);
+
+    path = path.substr(0, path.find_last_of("/\\"));
+
+    FileSystemManager managerCopy(*this);
+    managerCopy.manageMoveCommandMultiple(path);
+
+    BaseObject* toCopy = managerCopy.history.top()->getChild(filename);
 
     if (toCopy == nullptr) {
         throw std::invalid_argument("Child not found");
@@ -233,7 +248,11 @@ void FileSystemManager::copyFile(std::string filename, std::string destinationPa
         throw std::invalid_argument("Cannot copy a directory");
     }
 
-    FileSystemManager managerCopy(*this);
+    if (destinationPath == path) {
+        throw std::invalid_argument("Cannot copy to the same directory");
+    }
+
+    managerCopy = FileSystemManager(*this);
 
     managerCopy.manageMoveCommandMultiple(destinationPath);
 
@@ -250,10 +269,16 @@ void FileSystemManager::copyFile(std::string filename, std::string destinationPa
 
     overwriteFile(fullDir);
     delete fullDir;
+
+    refreshCurrentDirectory();
 }
 
 void FileSystemManager::writeToFile(std::string name, std::string content) {
     BaseObject* file = history.top()->getChild(name);
+
+    if (includesSome(name, { '/', '\\' })) {
+        throw std::invalid_argument("File name cannot contain '/' or '\\'");
+    }
 
     if (content.size() < 3) {
         content = "";
@@ -274,11 +299,9 @@ void FileSystemManager::writeToFile(std::string name, std::string content) {
 
         overwriteFile(fullDir);
         delete fullDir;
-        fileStream2.open(filename, std::ios::in | std::ios::binary);
-        Directory* updatedDir = Directory::deserializeShallowFrom(fileStream2, history.top()->getStart());
-        fileStream2.close();
-        history.pop();
-        history.push(fullDir);
+
+        refreshCurrentDirectory();
+
         return;
     }
 
@@ -298,6 +321,7 @@ void FileSystemManager::writeToFile(std::string name, std::string content) {
 
     file2->setContent(toWrite);
     overwriteFile(file2);
+    refreshCurrentDirectory();
 }
 
 void FileSystemManager::importFile(std::string source, std::string destination, std::string append) {
