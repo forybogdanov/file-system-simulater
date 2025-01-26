@@ -98,7 +98,7 @@ void FileSystemManager::manageMoveCommandMultiple(std::string command) {
 
 void FileSystemManager::overwriteFile(BaseObject* current) {
     std::fstream fileStream(filename, std::ios::in | std::ios::out | std::ios::binary);
-
+    
     fileStream.seekg(0, std::ios::end);
     std::streampos fileSize = fileStream.tellg();
 
@@ -274,6 +274,11 @@ void FileSystemManager::writeToFile(std::string name, std::string content) {
 
         overwriteFile(fullDir);
         delete fullDir;
+        fileStream2.open(filename, std::ios::in | std::ios::binary);
+        Directory* updatedDir = Directory::deserializeShallowFrom(fileStream2, history.top()->getStart());
+        fileStream2.close();
+        history.pop();
+        history.push(fullDir);
         return;
     }
 
