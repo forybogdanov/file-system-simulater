@@ -1,3 +1,107 @@
 *.exe
 
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# User-specific folders
 .vscode/
+.vs/
+_ReSharper*/
+*.ncrunchsolution/
+*.DotSettings.user
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# C++ generated files
+*.pch
+*.obj
+*.idb
+*.pdb
+*.ipdb
+*.pgc
+*.pgd
+*.rsp
+*.sbr
+*.tlb
+*.tli
+*.log
+*.vspscc
+*.vssscc
+.builds
+*.vcxproj.*
+*.vcxproj.filters
+*.tlog/
+*.lastbuildstate
+
+# Visual Studio profiler
+*.psess
+*.vsp
+*.vspx
+*.sap
+
+# Temporary files
+[Tt]emp/
+[Tt]mp/
+*.tmp
+*.log
+*.vspscc
+*.vssscc
+*.svclog
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# Npm package files
+node_modules/
+*.log
+
+# Visual Studio database files
+*.mdf
+*.ldf
+*.ndf
+
+# Visual Studio 2019/2022
+.vs/
+.vscode/
+
+# Local history for JetBrains IDEs
+.idea/
+.idea_modules/
+
+# Crash and analysis
+*.wer
+
+# Compiled DLLs and executables
+*.dll
+*.exe
+*.so
+*.dylib
+*.lib
+
+# Packages
+*.nupkg
+*.snupkg
+
+# Others
+*.DS_Store
+*.directory
+*.cache
+*.log
